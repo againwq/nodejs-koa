@@ -30,3 +30,4 @@ coverage
 static/FilesDeposit/*
 static/ProjectDeposit/*
 sqlite/*
+tmp/*

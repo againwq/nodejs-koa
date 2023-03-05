@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, ReadStream, WriteStream } from 'node:fs'
 import config from '../config.js'
 import { saveFileInfo } from '../databases/sqlite.js'
 
@@ -24,6 +24,20 @@ const saveFileData = function(username, fileName, fileSize, fileType, md5, uploa
     saveFileInfo({ username, fileName, fileSize, fileType, md5, uploadDate, isCompleted, path })
 }
 
+/**
+ * 
+ * @param {ReadStream} readStream 
+ * @param {WriteStream} writeStream 
+ * @returns 
+ */
+const sequeStream = function(readStream, writeStream){
+    return new Promise((resolve, reject) => {
+        readStream.pipe(writeStream, { end: false })
+        readStream.on('close', () => {
+            resolve()
+        })
+    })
+}
 export {
-    dateOptimize, createUserSpace, saveFileData
+    dateOptimize, createUserSpace, saveFileData, sequeStream
 }

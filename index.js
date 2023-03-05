@@ -8,14 +8,16 @@ import { catchError } from './middle/catchError.js'
 
 
 const app = new Koa()
-app.use(catchError)
+//app.use(catchError)
 //跨域
 app.use(cors())
 //解析request
 app.use(koaBody({
     multipart:true,
+    formidable:{
+        keepExtensions: true
+    }
 }))
-
 //静态服务器
 app.use(mount('/static/FilesDeposit', staticServer('FilesDeposit', { defer: true })))
 app.use(mount('/static/ProjectDeposit',staticServer('ProjectDeposit', { defer: true })))

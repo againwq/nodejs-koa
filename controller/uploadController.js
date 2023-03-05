@@ -1,9 +1,10 @@
-import { dateOptimize, saveFileData } from '../utils/tools.js'
+import { dateOptimize, saveFileData, sequeStream } from '../utils/tools.js'
 import { compareFileMD5 } from '../databases/sqlite.js'
-import { Dirent, existsSync } from 'node:fs'
-import { readdir, copyFile } from 'node:fs/promises'
+import { Dirent, existsSync, createWriteStream, createReadStream, writeFile } from 'node:fs'
+import { readdir, copyFile, mkdir, rm } from 'node:fs/promises'
 import config from '../config.js'
 import path from 'node:path'
+
 /**
  * 
  * @param {string} fileMD5 文件md5值
@@ -12,7 +13,7 @@ import path from 'node:path'
  * @returns
  */
 const checkFileComplete = async function (fileMD5, username, path) {
-    const checkPath = `${config.FILE_DEPOSIT_PATH}/${username}${path}/${fileMD5}`
+    const checkPath = `${config.TMP_SAVE_FILE}/${username}${path}/${fileMD5}`
     const dirent = new Dirent(checkPath)
     //如果指定路径是一个文件夹，则代表当前文件已经上传了一部分分片
     if (existsSync(checkPath) && dirent.isDirectory()) {
@@ -56,6 +57,7 @@ const verifyFileMD5 = async function (ctx, next) {
                 }
             }
         } else {
+            console.log('ddddd')
             //如果找到了相同的md5值，则直接秒传
             let { md5, path } = res[0]
             path = `${config.FILE_DEPOSIT_PATH}/${username}${path}/${md5}`
@@ -77,8 +79,69 @@ const verifyFileMD5 = async function (ctx, next) {
     await next()
 
 }
+/**
+ * 
+ * @param {*} ctx 
+ * @param {*} next 
+ */
+const uploadChunk = async function (ctx, next) {
+    let { username, md5, path, finish, total } = ctx.request.query
+    const tmpDir = `${config.TMP_SAVE_FILE}/${username}${path}/${md5}`
+    const aimFile = `${config.FILE_DEPOSIT_PATH}/${username}${path}/${md5}`
+
+    if (parseInt(finish)) {
+        total = parseInt(total)
+        const filesName = (await readdir(tmpDir)).map(value => parseInt(value))
+        //如果收到结束请求后没有缺少的chunk,就将tmpDir中的文件合并并移到用户指定目录，然后删除tmpDir
+        if (total === filesName.length) {
+            writeFile(`${aimFile}`, '', (err) => {
+                if (err) console.log(err);
+            })
+
+            let aimStream = createWriteStream(`${aimFile}`)
+
+            for (let i of [...Array(total).keys()]) {
+                console.log(i)
+                const sourceStream = createReadStream(`${tmpDir}/${i}`)
+                await sequeStream(sourceStream, aimStream)
+            }
+            await rm(tmpDir, { recursive: true, force: true })
+
+            ctx.body = { success: true, data: { merge: true } }
+
+        } else {
+            //如果有缺失的文件就查出缺失的chunk,然后要求前端重新发
+            const compareArr = Array.from({ length: total }, (v, k) => k)
+            const loseArr = compareArr.filter((value) => !filesName.includes(value))
+            ctx.body = { success: true, data: { merge: false, lose: loseArr } }
+        }
+
+    } else {
+        const chunks = ctx.request.files
+        const chunkName = Object.keys(chunks)[0]
+        if (!existsSync(tmpDir)) await mkdir(tmpDir, { recursive: true })
+        const readStream = createReadStream(chunks[chunkName].filepath)
+
+        writeFile(`${tmpDir}/${chunkName}`, '', async (err) => {
+            if (err) console.log(err)
+        })
+        let writeStream = createWriteStream(`${tmpDir}/${chunkName}`)
+
+        await sequeStream(readStream, writeStream)
+
+        ctx.body = {
+            success: true,
+            data: {
+                chunk: parseInt(chunkName)
+            }
+        }
+    }
+
+    await next()
+}
+
 
 
 export {
-    verifyFileMD5
+    verifyFileMD5, uploadChunk
 }
